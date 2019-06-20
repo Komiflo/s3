@@ -2,9 +2,9 @@ package s3
 
 import (
 	"bytes"
-	"crypto/hmac"
+	// "crypto/hmac"
 	"crypto/md5"
-	"crypto/sha1"
+	// "crypto/sha1"
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
@@ -17,6 +17,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	// "github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/aws/signer/v4"
 )
 
 // S3 provides a wrapper around your S3 credentials. It carries no other internal state
@@ -39,14 +44,16 @@ func NewS3(bucket, accessId, secret string) *S3 {
 }
 
 func (s3 *S3) signRequest(req *http.Request) {
-	amzHeaders := ""
+	singer := v4.Signer{
+		Credentials: credentials.NewStaticCredentials(s3.accessId, s3.secret, ""),
+	}
 	resourceUrl, _ := url.Parse("/" + s3.bucket + req.URL.Path)
 	resource := resourceUrl.String()
 
-	/* Ugh, AWS requires us to order the parameters in a specific ordering for
-	 * signing. Makes sense, but is annoying because a map does not have a defined
-	 * ordering (and basically returns elements in a random order) -- so we have
-	 * to sort by hand */
+	// /* Ugh, AWS requires us to order the parameters in a specific ordering for
+	//  * signing. Makes sense, but is annoying because a map does not have a defined
+	//  * ordering (and basically returns elements in a random order) -- so we have
+	//  * to sort by hand */
 	query := req.URL.Query()
 	if len(query) > 0 {
 		keys := []string{}
@@ -84,20 +91,17 @@ func (s3 *S3) signRequest(req *http.Request) {
 		req.Header.Set("Date", time.Now().Format(time.RFC1123))
 	}
 
-	authStr := strings.Join([]string{
-		strings.TrimSpace(req.Method),
-		req.Header.Get("Content-MD5"),
-		req.Header.Get("Content-Type"),
-		req.Header.Get("Date"),
-		amzHeaders + resource,
-	}, "\n")
-
-	h := hmac.New(sha1.New, []byte(s3.secret))
-	h.Write([]byte(authStr))
-
-	h64 := base64.StdEncoding.EncodeToString(h.Sum(nil))
-	auth := "AWS" + " " + s3.accessId + ":" + h64
-	req.Header.Set("Authorization", auth)
+	var seeker io.ReadSeeker
+	if sr, ok := req.Body.(io.ReadSeeker); ok {
+		seeker = sr
+	} else {
+		seeker = aws.ReadSeekCloser(req.Body)
+	}
+	signedHeaders, err := singer.Sign(req, seeker, "s3", "ap-northeast-1", time.Now())
+	if err != nil {
+		fmt.Printf("error: %s\n", err)
+	}
+	fmt.Printf("Signed Header: %s\n", signedHeaders)
 }
 
 func (s3 *S3) resource(path string, values url.Values) string {
