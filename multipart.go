@@ -58,7 +58,6 @@ func (mp *S3Multipart) AddPart(r io.Reader, size int64, md5sum []byte) error {
 	}
 
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", size))
-	req.Header.Set("Host", req.URL.Host)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = size
 
@@ -114,7 +113,6 @@ func (mp *S3Multipart) Complete(contentType string) error {
 	}
 
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(xmlBody)))
-	req.Header.Set("Host", req.URL.Host)
 	req.Header.Set("Content-Type", contentType)
 	req.ContentLength = int64(len(xmlBody))
 
